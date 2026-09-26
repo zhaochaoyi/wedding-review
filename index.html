@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>婚纱照逐张审阅</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#F3F4F1; --panel:#FFFFFF; --ink:#1D1F1E; --mute:#6A6F6B; --line:#DCDFDA;
+  --ok:#2F6B5A; --ok-soft:#E3EFEA; --redo:#B5533C; --redo-soft:#F6E6E0; --frame:#1A1917;
+  --chip:#E8EAE6; --focus:#2F6B5A;
+  --serif:"Noto Serif SC","Songti SC","SimSun",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#131514; --panel:#1C1F1D; --ink:#E7E9E5; --mute:#9BA19C; --line:#2E332F;
+    --ok:#6FB59C; --ok-soft:#1F332C; --redo:#E0876F; --redo-soft:#3A2520; --frame:#0B0B0A;
+    --chip:#262A27; --focus:#6FB59C; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#131514; --panel:#1C1F1D; --ink:#E7E9E5; --mute:#9BA19C; --line:#2E332F;
+  --ok:#6FB59C; --ok-soft:#1F332C; --redo:#E0876F; --redo-soft:#3A2520; --frame:#0B0B0A;
+  --chip:#262A27; --focus:#6FB59C; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6;padding-inline:clamp(16px,3vw,40px);padding-block:0 64px}
+header.top{padding-block:36px 18px;display:grid;gap:10px;max-width:1500px;margin-inline:auto}
+h1{font-family:var(--serif);font-weight:700;font-size:clamp(26px,3.4vw,38px);line-height:1.2;margin:0;text-wrap:balance;letter-spacing:.02em}
+.lede{color:var(--mute);max-width:62ch;margin:0}
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-inline:calc(-1*clamp(16px,3vw,40px));padding:10px clamp(16px,3vw,40px)}
+.bar-in{max-width:1500px;margin-inline:auto;display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center}
+.tally{display:flex;gap:16px;font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:13px;color:var(--mute)}
+.tally b{color:var(--ink);font-weight:500}
+.tally .t-ok b{color:var(--ok)} .tally .t-redo b{color:var(--redo)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--chip);color:var(--ink);font:inherit;font-size:13px;padding:3px 11px;border-radius:999px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.chip:focus-visible,.btn:focus-visible,textarea:focus-visible,.shot:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.sync{font-size:12px;color:var(--mute);margin-left:auto}
+main{max-width:1500px;margin-inline:auto}
+section.scene{margin-top:34px}
+section.scene h2{font-family:var(--serif);font-weight:500;font-size:20px;margin:0 0 4px;display:flex;gap:12px;align-items:baseline}
+section.scene h2 small{font-family:var(--mono);font-size:12px;color:var(--mute);font-weight:400}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr));gap:18px;margin-top:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden;display:flex;flex-direction:column}
+.card[data-status="ok"]{border-color:color-mix(in srgb,var(--ok) 55%,var(--line))}
+.card[data-status="redo"]{border-color:var(--redo);box-shadow:0 0 0 1px var(--redo) inset}
+.shot{display:block;background:var(--frame);border:0;padding:0;cursor:zoom-in;position:relative;width:100%}
+.shot img{display:block;width:100%;height:auto;aspect-ratio:var(--ar);object-fit:contain}
+.lbl{position:absolute;top:6px;font-size:11px;letter-spacing:.08em;color:#fff;background:rgba(0,0,0,.45);padding:1px 7px;border-radius:3px}
+.lbl.l{left:6px}.lbl.r{left:calc(50% + 10px)}
+.meta{display:flex;align-items:center;gap:8px;padding:10px 12px 0}
+.num{font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums;margin-right:auto}
+.btn{font:inherit;font-size:13px;border:1px solid var(--line);background:transparent;color:var(--ink);padding:4px 12px;border-radius:4px;cursor:pointer}
+.btn.ok[aria-pressed="true"]{background:var(--ok-soft);border-color:var(--ok);color:var(--ok);font-weight:500}
+.btn.redo[aria-pressed="true"]{background:var(--redo-soft);border-color:var(--redo);color:var(--redo);font-weight:500}
+.note{padding:8px 12px 12px}
+textarea{width:100%;font:inherit;font-size:13px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:6px 8px;resize:vertical;min-height:34px}
+.card[data-status="redo"] textarea{border-color:var(--redo)}
+.empty{color:var(--mute);padding:40px 0;text-align:center}
+.lb{position:fixed;inset:0;background:rgba(10,10,9,.94);z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:calc(12px + env(safe-area-inset-top,0px)) 12px calc(12px + env(safe-area-inset-bottom,0px))}
+.lb img{max-width:100%;max-height:calc(100% - 50px);object-fit:contain}
+.lb .cap{color:#ddd;font-family:var(--mono);font-size:13px;display:flex;gap:14px;align-items:center}
+.lb button{font:inherit;color:#eee;background:transparent;border:1px solid #555;border-radius:4px;padding:3px 12px;cursor:pointer}
+@media (prefers-reduced-motion:no-preference){.card{transition:border-color .15s}}
+</style>
+<style>
+.gate{min-height:100vh;display:grid;place-items:center;padding-block:40px}
+.gate form{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:28px;display:grid;gap:14px;width:min(100%,380px)}
+.gate h1{font-size:26px}
+.gate p{margin:0;color:var(--mute);font-size:14px}
+.gate input{font:inherit;font-size:16px;padding:9px 11px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink)}
+.gate button{font:inherit;font-size:15px;padding:9px;border-radius:5px;border:0;background:var(--ok);color:#fff;cursor:pointer}
+.gate button:disabled{opacity:.6;cursor:progress}
+.err{color:var(--redo);font-size:14px;min-height:1.2em}
+.export{display:flex;gap:8px}
+.shot img{background:var(--frame)}
+</style>
+</head><body>
+<div class="gate" id="gate"><form id="gform">
+  <h1>婚纱照逐张审阅</h1>
+  <p>照片已加密，请输入密码查看。</p>
+  <input id="pw" type="password" autocomplete="current-password" placeholder="密码" aria-label="密码" required>
+  <button id="go" type="submit">打开</button>
+  <div class="err" id="err" role="alert"></div>
+</form></div>
+
+<div id="app" hidden>
+<header class="top">
+  <h1>婚纱照逐张审阅</h1>
+  <p class="lede">每张左边是原图，右边是修后。点图片可以放大看。满意就点「满意」；不满意点「需返工」，并写一句原因。标记保存在这台设备的浏览器里；看完后点「复制全部标记」，把内容发给 Claude 即可返工。</p>
+</header>
+<div class="bar"><div class="bar-in">
+  <div class="tally" aria-live="polite">
+    <span>已看 <b id="t-seen">0</b>/<span id="t-all">0</span></span>
+    <span class="t-ok">满意 <b id="t-ok">0</b></span>
+    <span class="t-redo">需返工 <b id="t-redo">0</b></span>
+  </div>
+  <div class="chips" role="group" aria-label="按状态筛选">
+    <button class="chip" data-f="all" aria-pressed="true">全部</button>
+    <button class="chip" data-f="todo" aria-pressed="false">还没看</button>
+    <button class="chip" data-f="redo" aria-pressed="false">需返工</button>
+    <button class="chip" data-f="ok" aria-pressed="false">满意</button>
+  </div>
+  <div class="chips" role="group" aria-label="按场景跳转" id="scenechips"></div>
+  <div class="export"><button class="chip" id="copy">复制全部标记</button><button class="chip" id="dl">下载标记文件</button></div>
+  <span class="sync" id="sync"></span>
+</div></div>
+<main id="main"></main>
+</div>
+
+<div class="lb" id="lb" hidden>
+  <img id="lb-img" alt="">
+  <div class="cap"><button id="lb-prev">上一张</button><span id="lb-cap"></span><button id="lb-next">下一张</button><button id="lb-close">关闭</button></div>
+</div>
+
+<script>
+const SCENES = [
+  [8913,8986,"白棚"],[8987,9072,"欧式宫廷"],[9073,9123,"森系花房"],[9124,9179,"红墙"],
+  [9180,9236,"操场"],[9237,9279,"楼梯"],[9280,9290,"数学科学学院"],[9291,9403,"博雅塔草坪"],
+  [9404,9449,"红柱回廊"],[9450,9487,"华表"],[9488,9499,"西门"]
+];
+const sceneOf = n => { const k = +n.slice(4); const s = SCENES.find(s => k >= s[0] && k <= s[1]); return s ? s[2] : "其他"; };
+let PHOTOS = [], KEY = null, filter = "all";
+const state = {}, cards = {}, urls = {};
+const LS = "wedding-review-v1";
+try { Object.assign(state, JSON.parse(localStorage.getItem(LS) || "{}")); } catch (e) {}
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+
+async function deriveKey(pw){
+  const kdf = await (await fetch("d/kdf.json", {cache:"no-cache"})).json();
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"PBKDF2", salt:b64(kdf.salt), iterations:kdf.iter, hash:"SHA-256"}, base, {name:"AES-GCM", length:256}, false, ["decrypt"]);
+}
+async function decryptFile(path){
+  const buf = new Uint8Array(await (await fetch(path)).arrayBuffer());
+  return crypto.subtle.decrypt({name:"AES-GCM", iv:buf.slice(0,12)}, KEY, buf.slice(12));
+}
+document.getElementById("gform").addEventListener("submit", async e => {
+  e.preventDefault();
+  const btn = document.getElementById("go"), err = document.getElementById("err");
+  btn.disabled = true; btn.textContent = "正在解密…"; err.textContent = "";
+  try {
+    KEY = await deriveKey(document.getElementById("pw").value);
+    PHOTOS = JSON.parse(new TextDecoder().decode(await decryptFile("d/manifest.bin")));
+    try { sessionStorage.setItem("wr-ok", "1"); } catch (x) {}
+    document.getElementById("gate").hidden = true; document.getElementById("app").hidden = false;
+    build(); paintAll();
+  } catch (x) {
+    err.textContent = x && x.name === "OperationError" ? "密码不对，请再试一次。" : "加载失败，请检查网络后重试。";
+    btn.disabled = false; btn.textContent = "打开";
+  }
+});
+
+// images are decrypted only when they scroll into view
+const io = new IntersectionObserver(ents => ents.forEach(en => { if (en.isIntersecting) { io.unobserve(en.target); loadImg(en.target); } }), {rootMargin:"600px"});
+async function getUrl(p){
+  if (!urls[p.n]) urls[p.n] = decryptFile("d/" + p.f + ".bin").then(b => URL.createObjectURL(new Blob([b], {type:"image/jpeg"})));
+  return urls[p.n];
+}
+async function loadImg(img){ const p = PHOTOS.find(x => x.n === img.dataset.n); img.src = await getUrl(p); }
+
+const main = document.getElementById("main");
+function build(){
+  const groups = {};
+  PHOTOS.forEach(p => (groups[sceneOf(p.n)] ||= []).push(p));
+  const chipBox = document.getElementById("scenechips");
+  SCENES.map(s => s[2]).filter(s => groups[s]).forEach((s, i) => {
+    const sec = document.createElement("section"); sec.className = "scene"; sec.id = "sc" + i;
+    sec.innerHTML = `<h2>${s}<small>${groups[s].length} 张</small></h2><div class="grid"></div>`;
+    const grid = sec.querySelector(".grid");
+    groups[s].forEach(p => grid.appendChild(card(p)));
+    main.appendChild(sec);
+    const c = document.createElement("button"); c.className = "chip"; c.textContent = s; c.setAttribute("aria-pressed", "false");
+    c.onclick = () => sec.scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
+    chipBox.appendChild(c);
+  });
+}
+function card(p){
+  const el = document.createElement("article"); el.className = "card";
+  el.innerHTML = `
+    <button class="shot" style="--ar:${p.w}/${p.h}" aria-label="放大查看 ${p.n}">
+      <img data-n="${p.n}" width="${p.w}" height="${p.h}" alt="${p.n} 原图与修后对比">
+      <span class="lbl l">原图</span><span class="lbl r">修后</span>
+    </button>
+    <div class="meta"><span class="num">${p.n.slice(4)}</span>
+      <button class="btn ok" aria-pressed="false">满意</button>
+      <button class="btn redo" aria-pressed="false">需返工</button></div>
+    <div class="note"><textarea id="note-${p.n}" rows="1" placeholder="哪里不满意？（可选）"></textarea></div>`;
+  io.observe(el.querySelector("img"));
+  el.querySelector(".shot").onclick = () => openLb(p.n);
+  el.querySelector(".ok").onclick = () => setStatus(p.n, state[p.n]?.status === "ok" ? "" : "ok");
+  el.querySelector(".redo").onclick = () => setStatus(p.n, state[p.n]?.status === "redo" ? "" : "redo");
+  const ta = el.querySelector("textarea"); let t;
+  ta.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => setNote(p.n, ta.value), 500); });
+  ta.addEventListener("blur", () => { clearTimeout(t); if ((state[p.n]?.note || "") !== ta.value) setNote(p.n, ta.value); });
+  cards[p.n] = el; return el;
+}
+function paint(n){
+  const el = cards[n]; if (!el) return; const s = state[n] || {};
+  el.dataset.status = s.status || "";
+  el.querySelector(".ok").setAttribute("aria-pressed", s.status === "ok");
+  el.querySelector(".redo").setAttribute("aria-pressed", s.status === "redo");
+  const ta = el.querySelector("textarea"); if (document.activeElement !== ta) ta.value = s.note || "";
+  el.hidden = !(filter === "all" || (filter === "todo" && !s.status) || filter === s.status);
+}
+function tally(){
+  const v = PHOTOS.map(p => state[p.n] || {});
+  document.getElementById("t-all").textContent = PHOTOS.length;
+  document.getElementById("t-ok").textContent = v.filter(s => s.status === "ok").length;
+  document.getElementById("t-redo").textContent = v.filter(s => s.status === "redo").length;
+  document.getElementById("t-seen").textContent = v.filter(s => s.status).length;
+  document.querySelectorAll("section.scene").forEach(sec => sec.hidden = ![...sec.querySelectorAll(".card")].some(c => !c.hidden));
+}
+function paintAll(){ PHOTOS.forEach(p => paint(p.n)); tally(); }
+function save(){ try { localStorage.setItem(LS, JSON.stringify(state)); flash("已保存在这台设备上"); } catch (e) { flash("浏览器不允许保存，请尽快复制标记"); } }
+function setStatus(n, st){ state[n] = {...(state[n] || {}), status: st}; paint(n); tally(); save(); }
+function setNote(n, txt){ const cur = state[n] || {}; state[n] = {...cur, note: txt, status: txt.trim() && !cur.status ? "redo" : cur.status}; paint(n); tally(); save(); }
+let ft; function flash(t){ const s = document.getElementById("sync"); s.textContent = t; clearTimeout(ft); ft = setTimeout(() => s.textContent = "", 2500); }
+
+function exportText(){
+  const redo = PHOTOS.filter(p => state[p.n]?.status === "redo"), ok = PHOTOS.filter(p => state[p.n]?.status === "ok");
+  const lines = ["【需返工】" + redo.length + " 张"];
+  redo.forEach(p => lines.push(p.n + "：" + ((state[p.n].note || "").trim() || "（没写原因）")));
+  lines.push("", "【满意】" + ok.length + " 张", ok.map(p => p.n.slice(4)).join(" "));
+  const todo = PHOTOS.filter(p => !state[p.n]?.status); lines.push("", "【还没看】" + todo.length + " 张");
+  return lines.join("\n");
+}
+document.getElementById("copy").onclick = async () => {
+  try { await navigator.clipboard.writeText(exportText()); flash("已复制，粘贴发给 Claude 即可"); }
+  catch (e) { flash("复制失败，请用「下载标记文件」"); }
+};
+document.getElementById("dl").onclick = () => {
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([exportText()], {type:"text/plain;charset=utf-8"}));
+  a.download = "婚纱照标记.txt"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+document.querySelectorAll("[data-f]").forEach(b => b.onclick = () => {
+  filter = b.dataset.f; document.querySelectorAll("[data-f]").forEach(x => x.setAttribute("aria-pressed", x === b)); paintAll();
+});
+
+const lb = document.getElementById("lb"); let lbIdx = 0;
+const visibleNames = () => PHOTOS.map(p => p.n).filter(n => !cards[n].hidden);
+function openLb(n){ lbIdx = Math.max(0, visibleNames().indexOf(n)); showLb(); lb.hidden = false; document.getElementById("lb-close").focus(); }
+async function showLb(){ const v = visibleNames(); const n = v[lbIdx]; if (!n) return;
+  document.getElementById("lb-cap").textContent = n.slice(4) + "  ·  " + sceneOf(n) + "  ·  " + (lbIdx + 1) + "/" + v.length;
+  const img = document.getElementById("lb-img"); img.alt = n + " 原图与修后对比"; img.src = await getUrl(PHOTOS.find(p => p.n === n)); }
+function step(d){ const v = visibleNames(); lbIdx = (lbIdx + d + v.length) % v.length; showLb(); }
+document.getElementById("lb-prev").onclick = () => step(-1);
+document.getElementById("lb-next").onclick = () => step(1);
+document.getElementById("lb-close").onclick = () => { lb.hidden = true; };
+lb.addEventListener("click", e => { if (e.target === lb) lb.hidden = true; });
+document.addEventListener("keydown", e => { if (lb.hidden) return;
+  if (e.key === "Escape") lb.hidden = true; if (e.key === "ArrowRight") step(1); if (e.key === "ArrowLeft") step(-1); });
+document.getElementById("pw").focus();
+</script>
+</body></html>
