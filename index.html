@@ -95,7 +95,7 @@ textarea{width:100%;font:inherit;font-size:13px;color:var(--ink);background:var(
 <div id="app" hidden>
 <header class="top">
   <h1>婚纱照逐张审阅</h1>
-  <p class="lede">每张左边是原图，右边是修后。点图片可以放大看。满意就点「满意」；不满意点「需返工」，并写一句原因。标记保存在这台设备的浏览器里；看完后点「复制全部标记」，把内容发给 Claude 即可返工。</p>
+  <p class="lede">每张左边是原图，右边是修后。点图片可以放大看。满意就点「满意」；不满意点「需返工」，并写一句原因。标记会自动同步，两个人在不同设备上看也能互相看到；Claude 可以直接读取这些标记来返工。</p>
 </header>
 <div class="bar"><div class="bar-in">
   <div class="tally" aria-live="polite">
@@ -110,6 +110,8 @@ textarea{width:100%;font:inherit;font-size:13px;color:var(--ink);background:var(
     <button class="chip" data-f="ok" aria-pressed="false">满意</button>
   </div>
   <div class="chips" role="group" aria-label="按场景跳转" id="scenechips"></div>
+  <div class="chips" role="group" aria-label="我是谁"><span class="sync" style="margin:0">我是</span>
+    <button class="chip" data-who="新郎" aria-pressed="false">新郎</button><button class="chip" data-who="新娘" aria-pressed="false">新娘</button></div>
   <div class="export"><button class="chip" id="copy">复制全部标记</button><button class="chip" id="dl">下载标记文件</button></div>
   <span class="sync" id="sync"></span>
 </div></div>
@@ -153,6 +155,7 @@ document.getElementById("gform").addEventListener("submit", async e => {
     try { sessionStorage.setItem("wr-ok", "1"); } catch (x) {}
     document.getElementById("gate").hidden = true; document.getElementById("app").hidden = false;
     build(); paintAll();
+    startSync();
   } catch (x) {
     err.textContent = x && x.name === "OperationError" ? "密码不对，请再试一次。" : "加载失败，请检查网络后重试。";
     btn.disabled = false; btn.textContent = "打开";
@@ -199,7 +202,7 @@ function card(p){
   el.querySelector(".ok").onclick = () => setStatus(p.n, state[p.n]?.status === "ok" ? "" : "ok");
   el.querySelector(".redo").onclick = () => setStatus(p.n, state[p.n]?.status === "redo" ? "" : "redo");
   const ta = el.querySelector("textarea"); let t;
-  ta.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => setNote(p.n, ta.value), 500); });
+  ta.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => setNote(p.n, ta.value), 1500); });
   ta.addEventListener("blur", () => { clearTimeout(t); if ((state[p.n]?.note || "") !== ta.value) setNote(p.n, ta.value); });
   cards[p.n] = el; return el;
 }
@@ -220,10 +223,80 @@ function tally(){
   document.querySelectorAll("section.scene").forEach(sec => sec.hidden = ![...sec.querySelectorAll(".card")].some(c => !c.hidden));
 }
 function paintAll(){ PHOTOS.forEach(p => paint(p.n)); tally(); }
-function save(){ try { localStorage.setItem(LS, JSON.stringify(state)); flash("已保存在这台设备上"); } catch (e) { flash("浏览器不允许保存，请尽快复制标记"); } }
-function setStatus(n, st){ state[n] = {...(state[n] || {}), status: st}; paint(n); tally(); save(); }
-function setNote(n, txt){ const cur = state[n] || {}; state[n] = {...cur, note: txt, status: txt.trim() && !cur.status ? "redo" : cur.status}; paint(n); tally(); save(); }
-let ft; function flash(t){ const s = document.getElementById("sync"); s.textContent = t; clearTimeout(ft); ft = setTimeout(() => s.textContent = "", 2500); }
+function save(){ try { localStorage.setItem(LS, JSON.stringify(state)); } catch (e) { if (!CFG) flash("浏览器不允许保存，请尽快复制标记"); } }
+function stamp(n){ state[n].t = Date.now(); state[n].by = WHO || ""; queue(n); }
+function setStatus(n, st){ state[n] = {...(state[n] || {}), status: st}; stamp(n); paint(n); tally(); save(); }
+function setNote(n, txt){ const cur = state[n] || {}; state[n] = {...cur, note: txt, status: txt.trim() && !cur.status ? "redo" : cur.status}; stamp(n); paint(n); tally(); save(); }
+
+// ---- sync with the private marks repository (GitHub contents API)
+let CFG = null, WHO = "";
+try { WHO = localStorage.getItem("wr-who") || ""; } catch (e) {}
+const pendingSet = new Set(); let flushTimer = null, flushing = false, pulled = false;
+const enc = new TextEncoder(), dec = new TextDecoder();
+const toB64 = u8 => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+function gh(path, opt = {}){
+  return fetch("https://api.github.com/repos/" + CFG.repo + "/contents/" + path, {cache:"no-store", ...opt,
+    headers:{"Authorization":"Bearer " + CFG.token, "Accept":"application/vnd.github+json", "X-GitHub-Api-Version":"2022-11-28", ...(opt.headers || {})}});
+}
+async function getState(){
+  const r = await gh("state.json"); if (!r.ok) throw new Error("get " + r.status);
+  const j = await r.json(); return {sha: j.sha, data: JSON.parse(dec.decode(b64(j.content.replace(/\n/g, ""))) || "{}")};
+}
+function mergeRemote(remote){
+  let changed = false;
+  for (const [n, r] of Object.entries(remote)) {
+    const l = state[n];
+    if (!l || (r.t || 0) > (l.t || 0)) { if (pendingSet.has(n)) continue; state[n] = r; changed = true; }
+  }
+  if (changed) { try { localStorage.setItem(LS, JSON.stringify(state)); } catch (e) {} paintAll(); }
+}
+function queue(n){ if (!CFG) return; pendingSet.add(n); clearTimeout(flushTimer); flushTimer = setTimeout(flush, 1200); setSyncState("待同步…"); }
+async function flush(){
+  if (!CFG || flushing || !pendingSet.size) return;
+  flushing = true; const names = [...pendingSet];
+  try {
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const cur = await getState(); const data = cur.data;
+      for (const n of names) if (!data[n] || (state[n].t || 0) >= (data[n].t || 0)) data[n] = state[n];
+      const body = JSON.stringify({message: "marks: " + names.map(n => n.slice(4)).join(" ") + (WHO ? " by " + WHO : ""),
+        content: toB64(enc.encode(JSON.stringify(data, null, 1))), sha: cur.sha});
+      const r = await gh("state.json", {method:"PUT", body});
+      if (r.ok) break;
+      if (r.status !== 409 && r.status !== 422) throw new Error("put " + r.status);
+      await new Promise(res => setTimeout(res, 400 + Math.random() * 800));
+      if (attempt === 5) throw new Error("conflict");
+    }
+    // one event file per flush: the operation history
+    const ev = {t: new Date().toISOString(), by: WHO || "", changes: names.map(n => ({photo: n, status: state[n].status || "", note: state[n].note || ""}))};
+    const id = ev.t.replace(/[-:.TZ]/g, "").slice(0, 14) + "-" + Math.random().toString(36).slice(2, 8);
+    await gh("events/" + id + ".json", {method:"PUT", body: JSON.stringify({message: "event " + id, content: toB64(enc.encode(JSON.stringify(ev, null, 1)))})});
+    names.forEach(n => pendingSet.delete(n));
+    setSyncState("已同步 " + new Date().toLocaleTimeString("zh-CN", {hour:"2-digit", minute:"2-digit"}));
+  } catch (e) {
+    setSyncState(e.message.includes("401") || e.message.includes("403") ? "同步钥匙失效，标记暂存在本机" : "同步失败，稍后自动重试");
+    clearTimeout(flushTimer); flushTimer = setTimeout(flush, 15000);
+  } finally { flushing = false; if (pendingSet.size && !flushTimer) flush(); }
+}
+async function pull(){ if (!CFG || flushing) return; try { mergeRemote((await getState()).data); pulled = true; } catch (e) {} }
+function setSyncState(t){ const s = document.getElementById("sync"); s.textContent = t; }
+async function startSync(){
+  document.querySelectorAll("[data-who]").forEach(b => { b.setAttribute("aria-pressed", b.dataset.who === WHO);
+    b.onclick = () => { WHO = b.dataset.who; try { localStorage.setItem("wr-who", WHO); } catch (e) {} document.querySelectorAll("[data-who]").forEach(x => x.setAttribute("aria-pressed", x === b)); }; });
+  try {
+    const r = await fetch("d/cfg.bin", {cache:"no-cache"}); if (!r.ok) throw 0;
+    const buf = new Uint8Array(await r.arrayBuffer());
+    CFG = JSON.parse(dec.decode(await crypto.subtle.decrypt({name:"AES-GCM", iv:buf.slice(0, 12)}, KEY, buf.slice(12))));
+  } catch (e) { setSyncState("未接通同步，标记只保存在本机"); return; }
+  setSyncState("正在同步…");
+  await pull();
+  // marks made on this device before sync existed: push them once
+  const remoteless = Object.keys(state).filter(n => state[n] && (state[n].status || state[n].note) && !state[n].t);
+  remoteless.forEach(n => { state[n].t = Date.now(); queue(n); });
+  if (!remoteless.length) setSyncState("已连接同步");
+  setInterval(pull, 30000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) pull(); });
+}
+let ft, keep = ""; function flash(t){ const s = document.getElementById("sync"); if (!ft) keep = s.textContent; s.textContent = t; clearTimeout(ft); ft = setTimeout(() => { s.textContent = keep; ft = null; }, 2200); }
 
 function exportText(){
   const redo = PHOTOS.filter(p => state[p.n]?.status === "redo"), ok = PHOTOS.filter(p => state[p.n]?.status === "ok");
