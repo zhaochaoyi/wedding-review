@@ -81,6 +81,12 @@ textarea{width:100%;font:inherit;font-size:13px;color:var(--ink);background:var(
 .gate button:disabled{opacity:.6;cursor:progress}
 .err{color:var(--redo);font-size:14px;min-height:1.2em}
 .export{display:flex;gap:8px}
+.note{display:grid;grid-template-columns:1fr auto;gap:6px 8px;align-items:start}
+.note textarea{grid-column:1/-1}
+.savebtn{font:inherit;font-size:13px;padding:4px 14px;border-radius:4px;border:1px solid var(--ok);background:var(--ok);color:#fff;cursor:pointer;justify-self:end}
+.savebtn:disabled{opacity:.55;cursor:default}
+.savemsg{font-size:12.5px;color:var(--mute);align-self:center;min-height:1.2em}
+.savemsg.ok{color:var(--ok);font-weight:500}.savemsg.dirty{color:var(--redo)}
 .shot img{background:var(--frame)}
 </style>
 </head><body>
@@ -95,7 +101,7 @@ textarea{width:100%;font:inherit;font-size:13px;color:var(--ink);background:var(
 <div id="app" hidden>
 <header class="top">
   <h1>婚纱照逐张审阅</h1>
-  <p class="lede">每张左边是原图，右边是修后。点图片可以放大看。满意就点「满意」；不满意点「需返工」，并写一句原因。标记会自动同步，两个人在不同设备上看也能互相看到；Claude 可以直接读取这些标记来返工。</p>
+  <p class="lede">每张左边是原图，右边是修后。点图片可以放大看。满意就点「满意」；不满意点「需返工」，并写一句原因。点「满意 / 需返工」会立即保存；备注写完请点「保存备注」。标记会自动同步，两个人在不同设备上看也能互相看到；Claude 可以直接读取这些标记来返工。</p>
 </header>
 <div class="bar"><div class="bar-in">
   <div class="tally" aria-live="polite">
@@ -196,14 +202,24 @@ function card(p){
     <div class="meta"><span class="num">${p.n.slice(4)}</span>
       <button class="btn ok" aria-pressed="false">满意</button>
       <button class="btn redo" aria-pressed="false">需返工</button></div>
-    <div class="note"><textarea id="note-${p.n}" rows="1" placeholder="哪里不满意？（可选）"></textarea></div>`;
+    <div class="note"><textarea id="note-${p.n}" rows="2" placeholder="哪里不满意？（可选）"></textarea>
+      <span class="savemsg" aria-live="polite"></span><button class="savebtn" type="button" disabled>保存备注</button></div>`;
   io.observe(el.querySelector("img"));
   el.querySelector(".shot").onclick = () => openLb(p.n);
   el.querySelector(".ok").onclick = () => setStatus(p.n, state[p.n]?.status === "ok" ? "" : "ok");
   el.querySelector(".redo").onclick = () => setStatus(p.n, state[p.n]?.status === "redo" ? "" : "redo");
-  const ta = el.querySelector("textarea"); let t;
-  ta.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => setNote(p.n, ta.value), 1500); });
-  ta.addEventListener("blur", () => { clearTimeout(t); if ((state[p.n]?.note || "") !== ta.value) setNote(p.n, ta.value); });
+  const ta = el.querySelector("textarea"), sb = el.querySelector(".savebtn"), sm = el.querySelector(".savemsg");
+  const msg = (t, cls) => { sm.textContent = t; sm.className = "savemsg" + (cls ? " " + cls : ""); };
+  ta.addEventListener("input", () => {
+    const dirty = (state[p.n]?.note || "") !== ta.value;
+    sb.disabled = !dirty; if (dirty) { dirtySet.add(p.n); msg("未保存", "dirty"); } else { dirtySet.delete(p.n); msg(""); }
+  });
+  sb.addEventListener("click", async () => {
+    sb.disabled = true; dirtySet.delete(p.n); msg("保存中…");
+    setNote(p.n, ta.value);
+    const r = await syncDone(p.n);
+    msg(r === "local" ? "已保存在本机 ✓" : r ? "已保存 ✓" : "已存本机，同步失败，会自动重试", r === false ? "dirty" : "ok");
+  });
   cards[p.n] = el; return el;
 }
 function paint(n){
@@ -211,7 +227,7 @@ function paint(n){
   el.dataset.status = s.status || "";
   el.querySelector(".ok").setAttribute("aria-pressed", s.status === "ok");
   el.querySelector(".redo").setAttribute("aria-pressed", s.status === "redo");
-  const ta = el.querySelector("textarea"); if (document.activeElement !== ta) ta.value = s.note || "";
+  const ta = el.querySelector("textarea"); if (document.activeElement !== ta && !dirtySet.has(n)) ta.value = s.note || "";
   el.hidden = !(filter === "all" || (filter === "todo" && !s.status) || filter === s.status);
 }
 function tally(){
@@ -232,6 +248,10 @@ function setNote(n, txt){ const cur = state[n] || {}; state[n] = {...cur, note: 
 let CFG = null, WHO = "";
 try { WHO = localStorage.getItem("wr-who") || ""; } catch (e) {}
 const pendingSet = new Set(); let flushTimer = null, flushing = false, pulled = false;
+const dirtySet = new Set(), waiters = {};
+function syncDone(n){ if (!CFG) return Promise.resolve("local"); return new Promise(res => (waiters[n] ||= []).push(res)); }
+function resolveWaiters(names, ok){ names.forEach(n => { (waiters[n] || []).forEach(f => f(ok)); delete waiters[n]; }); }
+window.addEventListener("beforeunload", e => { if (dirtySet.size || pendingSet.size) { e.preventDefault(); e.returnValue = ""; } });
 const enc = new TextEncoder(), dec = new TextDecoder();
 const toB64 = u8 => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
 function gh(path, opt = {}){
@@ -250,10 +270,11 @@ function mergeRemote(remote){
   }
   if (changed) { try { localStorage.setItem(LS, JSON.stringify(state)); } catch (e) {} paintAll(); }
 }
-function queue(n){ if (!CFG) return; pendingSet.add(n); clearTimeout(flushTimer); flushTimer = setTimeout(flush, 1200); setSyncState("待同步…"); }
+function queue(n){ if (!CFG) return; pendingSet.add(n); clearTimeout(flushTimer); flushTimer = setTimeout(flush, 300); setSyncState("待同步…"); }
 async function flush(){
   if (!CFG || flushing || !pendingSet.size) return;
-  flushing = true; const names = [...pendingSet];
+  flushing = true; flushTimer = null; const names = [...pendingSet];
+  const ver = Object.fromEntries(names.map(n => [n, state[n].t]));
   try {
     for (let attempt = 0; attempt < 6; attempt++) {
       const cur = await getState(); const data = cur.data;
@@ -270,12 +291,14 @@ async function flush(){
     const ev = {t: new Date().toISOString(), by: WHO || "", changes: names.map(n => ({photo: n, status: state[n].status || "", note: state[n].note || ""}))};
     const id = ev.t.replace(/[-:.TZ]/g, "").slice(0, 14) + "-" + Math.random().toString(36).slice(2, 8);
     await gh("events/" + id + ".json", {method:"PUT", body: JSON.stringify({message: "event " + id, content: toB64(enc.encode(JSON.stringify(ev, null, 1)))})});
-    names.forEach(n => pendingSet.delete(n));
+    const done = names.filter(n => state[n].t === ver[n]);   // changed again meanwhile -> stays pending
+    done.forEach(n => pendingSet.delete(n)); resolveWaiters(done, true);
     setSyncState("已同步 " + new Date().toLocaleTimeString("zh-CN", {hour:"2-digit", minute:"2-digit"}));
   } catch (e) {
     setSyncState(e.message.includes("401") || e.message.includes("403") ? "同步钥匙失效，标记暂存在本机" : "同步失败，稍后自动重试");
+    resolveWaiters(names, false);
     clearTimeout(flushTimer); flushTimer = setTimeout(flush, 15000);
-  } finally { flushing = false; if (pendingSet.size && !flushTimer) flush(); }
+  } finally { flushing = false; if (pendingSet.size && !flushTimer) flushTimer = setTimeout(flush, 300); }
 }
 async function pull(){ if (!CFG || flushing) return; try { mergeRemote((await getState()).data); pulled = true; } catch (e) {} }
 function setSyncState(t){ const s = document.getElementById("sync"); s.textContent = t; }
